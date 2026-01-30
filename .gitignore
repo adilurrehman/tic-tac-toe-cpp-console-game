@@ -1,0 +1,22 @@
+# Compiled executable
+tictactoe
+tictactoe.exe
+
+# Object files
+*.o
+*.obj
+
+# Data files (user data and high scores)
+users.dat
+highscores.dat
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
