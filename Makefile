@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++11 -Wall -Wextra
+CXXFLAGS = -std=c++14 -Wall -Wextra
 TARGET = tictactoe
 SRC = main.cpp
 

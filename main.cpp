@@ -7,12 +7,19 @@
 #include <limits>
 #include <ctime>
 #include <cstdlib>
+#include <memory>
 
 using namespace std;
 
 // Constants
 const string USERS_FILE = "users.dat";
 const string SCORES_FILE = "highscores.dat";
+const int INITIAL_LIVES = 3;
+const int POINTS_PER_WIN = 10;
+const int POINTS_PER_LIFE = 5;
+const int MINIMAX_MIN = -1000;
+const int MINIMAX_MAX = 1000;
+const int TOP_SCORES_COUNT = 10;
 
 // Structure to store user data
 struct User {
@@ -23,8 +30,8 @@ struct User {
     int draws;
     int lives;
     
-    User() : username(""), password(""), wins(0), losses(0), draws(0), lives(3) {}
-    User(string u, string p) : username(u), password(p), wins(0), losses(0), draws(0), lives(3) {}
+    User() : username(""), password(""), wins(0), losses(0), draws(0), lives(INITIAL_LIVES) {}
+    User(const string& u, const string& p) : username(u), password(p), wins(0), losses(0), draws(0), lives(INITIAL_LIVES) {}
 };
 
 // Structure for high scores
@@ -33,12 +40,56 @@ struct HighScore {
     int score;
     
     HighScore() : username(""), score(0) {}
-    HighScore(string u, int s) : username(u), score(s) {}
+    HighScore(const string& u, int s) : username(u), score(s) {}
     
     bool operator>(const HighScore& other) const {
         return score > other.score;
     }
 };
+
+// Helper functions
+int calculateScore(int wins, int lives) {
+    return wins * POINTS_PER_WIN + lives * POINTS_PER_LIFE;
+}
+
+void clearScreen() {
+    // Using ANSI escape codes for cross-platform compatibility
+    cout << "\033[2J\033[1;1H";
+}
+
+bool isValidUsername(const string& username) {
+    if (username.empty() || username.length() > 20) {
+        return false;
+    }
+    // Check for whitespace
+    for (char c : username) {
+        if (isspace(c)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool isValidPassword(const string& password) {
+    if (password.empty() || password.length() > 20) {
+        return false;
+    }
+    // Check for whitespace
+    for (char c : password) {
+        if (isspace(c)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void waitForEnter() {
+    if (cin.peek() == '\n') {
+        cin.ignore();
+    }
+    cout << "Press Enter to continue...";
+    cin.get();
+}
 
 // Game Board class
 class Board {
@@ -150,6 +201,10 @@ public:
             string username, password;
             int wins, losses, draws, lives;
             while (file >> username >> password >> wins >> losses >> draws >> lives) {
+                // Validate data ranges
+                if (wins < 0 || losses < 0 || draws < 0 || lives < 0) {
+                    continue; // Skip corrupted entries
+                }
                 User user(username, password);
                 user.wins = wins;
                 user.losses = losses;
@@ -170,7 +225,12 @@ public:
                      << user.wins << " " << user.losses << " " 
                      << user.draws << " " << user.lives << "\n";
             }
+            if (!file.good()) {
+                cerr << "Warning: Error writing to users file\n";
+            }
             file.close();
+        } else {
+            cerr << "Warning: Could not open users file for writing\n";
         }
     }
     
@@ -212,7 +272,10 @@ public:
             string username;
             int score;
             while (file >> username >> score) {
-                scores.push_back(HighScore(username, score));
+                // Validate score is non-negative
+                if (score >= 0) {
+                    scores.push_back(HighScore(username, score));
+                }
             }
             file.close();
         }
@@ -225,7 +288,12 @@ public:
             for (const auto& score : scores) {
                 file << score.username << " " << score.score << "\n";
             }
+            if (!file.good()) {
+                cerr << "Warning: Error writing to scores file\n";
+            }
             file.close();
+        } else {
+            cerr << "Warning: Could not open scores file for writing\n";
         }
     }
     
@@ -233,9 +301,9 @@ public:
         scores.push_back(HighScore(username, score));
         sort(scores.begin(), scores.end(), greater<HighScore>());
         
-        // Keep only top 10 scores
-        if (scores.size() > 10) {
-            scores.resize(10);
+        // Keep only top scores
+        if (scores.size() > TOP_SCORES_COUNT) {
+            scores.resize(TOP_SCORES_COUNT);
         }
         
         saveScores();
@@ -272,7 +340,7 @@ private:
         }
         
         if (isMaximizing) {
-            int bestScore = -1000;
+            int bestScore = MINIMAX_MIN;
             vector<pair<int, int>> moves = board.getAvailableMoves();
             for (const auto& move : moves) {
                 board.makeMove(move.first, move.second, aiSymbol);
@@ -282,7 +350,7 @@ private:
             }
             return bestScore;
         } else {
-            int bestScore = 1000;
+            int bestScore = MINIMAX_MAX;
             vector<pair<int, int>> moves = board.getAvailableMoves();
             for (const auto& move : moves) {
                 board.makeMove(move.first, move.second, humanSymbol);
@@ -298,7 +366,7 @@ public:
     AIPlayer(char ai, char human) : aiSymbol(ai), humanSymbol(human) {}
     
     pair<int, int> getBestMove(Board& board) {
-        int bestScore = -1000;
+        int bestScore = MINIMAX_MIN;
         pair<int, int> bestMove = {-1, -1};
         
         vector<pair<int, int>> moves = board.getAvailableMoves();
@@ -326,15 +394,7 @@ private:
     UserAuth& auth;
     HighScoreSystem& scoreSystem;
     bool isPvC;
-    AIPlayer* ai;
-    
-    void clearScreen() {
-        #ifdef _WIN32
-            system("cls");
-        #else
-            system("clear");
-        #endif
-    }
+    unique_ptr<AIPlayer> ai;
     
     bool getPlayerMove(char symbol, const string& playerName) {
         int row, col;
@@ -371,13 +431,7 @@ public:
     Game(User* p1, User* p2, UserAuth& a, HighScoreSystem& hs, bool pvC) 
         : player1(p1), player2(p2), auth(a), scoreSystem(hs), isPvC(pvC), ai(nullptr) {
         if (isPvC) {
-            ai = new AIPlayer('O', 'X');
-        }
-    }
-    
-    ~Game() {
-        if (ai) {
-            delete ai;
+            ai = make_unique<AIPlayer>('O', 'X');
         }
     }
     
@@ -412,9 +466,7 @@ public:
                     validMove = true;
                     cout << "Computer played: Row " << (move.first + 1) 
                          << ", Column " << (move.second + 1) << "\n";
-                    cin.ignore();
-                    cout << "Press Enter to continue...";
-                    cin.get();
+                    waitForEnter();
                 } else {
                     validMove = getPlayerMove('O', player2->username);
                 }
@@ -437,7 +489,7 @@ public:
                         player2->losses++;
                         player2->lives--;
                     }
-                    int score = player1->wins * 10 + player1->lives * 5;
+                    int score = calculateScore(player1->wins, player1->lives);
                     scoreSystem.addScore(player1->username, score);
                 } else {
                     if (isPvC) {
@@ -449,7 +501,7 @@ public:
                         player2->wins++;
                         player1->losses++;
                         player1->lives--;
-                        int score = player2->wins * 10 + player2->lives * 5;
+                        int score = calculateScore(player2->wins, player2->lives);
                         scoreSystem.addScore(player2->username, score);
                     }
                 }
@@ -479,9 +531,7 @@ public:
             currentUser = (currentUser == player1) ? player2 : player1;
         }
         
-        cout << "\nPress Enter to continue...";
-        cin.ignore();
-        cin.get();
+        waitForEnter();
     }
 };
 
@@ -532,19 +582,22 @@ void mainMenu() {
             
             if (choice == 1) {
                 string username, password;
-                cout << "\nEnter username: ";
+                cout << "\nEnter username (no spaces): ";
                 getline(cin, username);
-                cout << "Enter password: ";
+                cout << "Enter password (no spaces): ";
                 getline(cin, password);
                 
-                if (auth.registerUser(username, password)) {
+                if (!isValidUsername(username)) {
+                    cout << "\nInvalid username! Must be 1-20 characters with no spaces.\n";
+                } else if (!isValidPassword(password)) {
+                    cout << "\nInvalid password! Must be 1-20 characters with no spaces.\n";
+                } else if (auth.registerUser(username, password)) {
                     cout << "\nRegistration successful!\n";
                 } else {
                     cout << "\nUsername already exists!\n";
                 }
                 
-                cout << "Press Enter to continue...";
-                cin.get();
+                waitForEnter();
                 
             } else if (choice == 2) {
                 string username, password;
@@ -556,18 +609,15 @@ void mainMenu() {
                 currentUser = auth.login(username, password);
                 if (currentUser) {
                     cout << "\nLogin successful! Welcome, " << currentUser->username << "!\n";
-                    cout << "Press Enter to continue...";
-                    cin.get();
+                    waitForEnter();
                 } else {
                     cout << "\nInvalid username or password!\n";
-                    cout << "Press Enter to continue...";
-                    cin.get();
+                    waitForEnter();
                 }
                 
             } else if (choice == 3) {
                 scoreSystem.displayHighScores();
-                cout << "Press Enter to continue...";
-                cin.get();
+                waitForEnter();
                 
             } else if (choice == 4) {
                 cout << "\nThank you for playing!\n";
@@ -581,8 +631,7 @@ void mainMenu() {
             if (currentUser->lives <= 0) {
                 cout << "You have no lives left! Please register a new account.\n";
                 currentUser = nullptr;
-                cout << "Press Enter to continue...";
-                cin.get();
+                waitForEnter();
                 continue;
             }
             
@@ -618,33 +667,28 @@ void mainMenu() {
                 if (player2) {
                     if (player2->lives <= 0) {
                         cout << "\n" << opponent << " has no lives left!\n";
-                        cout << "Press Enter to continue...";
-                        cin.get();
+                        waitForEnter();
                     } else {
                         Game game(currentUser, player2, auth, scoreSystem, false);
                         game.play();
                     }
                 } else {
                     cout << "\nInvalid opponent credentials!\n";
-                    cout << "Press Enter to continue...";
-                    cin.get();
+                    waitForEnter();
                 }
                 
             } else if (choice == 3) {
                 displayUserStats(*currentUser);
-                cout << "Press Enter to continue...";
-                cin.get();
+                waitForEnter();
                 
             } else if (choice == 4) {
                 scoreSystem.displayHighScores();
-                cout << "Press Enter to continue...";
-                cin.get();
+                waitForEnter();
                 
             } else if (choice == 5) {
                 currentUser = nullptr;
                 cout << "\nLogged out successfully!\n";
-                cout << "Press Enter to continue...";
-                cin.get();
+                waitForEnter();
             }
         }
     }

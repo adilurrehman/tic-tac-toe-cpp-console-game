@@ -155,7 +155,7 @@ secretpass
 # After the game, choose 3 to see your stats
 3
 
-# Choose 5 to logout or 4 to exit
+# Choose 5 to logout, then 4 to exit
 5
 4
 ```

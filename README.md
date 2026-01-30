@@ -188,6 +188,17 @@ Enter column (1-3): 2
 - Undo/redo functionality
 - Game replay feature
 
+## Security Notes
+
+**Important:** This is a demonstration project for educational purposes. Please note:
+
+- Passwords are stored in plain text in the `users.dat` file
+- For production use, passwords should be properly hashed (e.g., using bcrypt or SHA-256)
+- Usernames and passwords must not contain spaces (validated during registration)
+- Data files should be protected with appropriate file permissions
+
+This implementation prioritizes code clarity and educational value over production-grade security.
+
 ## License
 
 This project is open source and available for educational purposes.
